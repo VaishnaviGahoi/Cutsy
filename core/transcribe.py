@@ -33,3 +33,25 @@ def transcribe_video(video_path: str) -> list[dict]:
             "text": seg.text.strip(),
         })
     return results
+
+def transcribe_video_words(video_path: str) -> list[dict]:
+    """
+    Returns segments with per-word timestamps, needed for karaoke-style captions.
+    """
+    model = _get_model()
+    segments, _info = model.transcribe(video_path, beam_size=5, vad_filter=True, word_timestamps=True)
+
+    results = []
+    for seg in segments:
+        words = [
+            {"start": w.start, "end": w.end, "text": w.word.strip()}
+            for w in (seg.words or [])
+            if w.word.strip()
+        ]
+        results.append({
+            "start": seg.start,
+            "end": seg.end,
+            "text": seg.text.strip(),
+            "words": words,
+        })
+    return results

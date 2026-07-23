@@ -37,3 +37,17 @@ def trim_video(input_path: str, start: float, end: float, output_path: str) -> N
         output_path,
     ]
     subprocess.run(cmd, check=True, capture_output=True)
+
+def get_video_resolution(video_path: str) -> tuple[int, int]:
+    """Returns (width, height) of the video's first stream using ffprobe."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height",
+        "-of", "json",
+        video_path,
+    ]
+    output = subprocess.check_output(cmd)
+    data = json.loads(output)
+    stream = data["streams"][0]
+    return int(stream["width"]), int(stream["height"])

@@ -5,10 +5,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from core.transcribe import transcribe_video
+from core.transcribe import transcribe_video, transcribe_video_words
 from core.selector import select_segment
-from core.trimmer import trim_video, get_video_duration
+from core.trimmer import trim_video, get_video_duration, get_video_resolution
 from core.captions import generate_srt, burn_captions
+from core.overlays import apply_text_layers, FONT_MAP, ANIMATIONS
+from core.karaoke import generate_karaoke_ass, burn_karaoke_captions, FONT_CHOICES as KARAOKE_FONTS
 
 st.set_page_config(page_title="Cutsy", page_icon="✂️", layout="centered")
 
@@ -97,8 +99,9 @@ if st.session_state.working_video_path:
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- TABS ----------
-tab_trim, tab_captions = st.tabs(["✂️ Trim", "💬 Captions"])
-
+tab_trim, tab_captions, tab_titles, tab_karaoke = st.tabs(
+    ["✂️ Trim", "💬 Captions", "🎬 Text Overlays", "🎤 Karaoke Captions"]
+)
 def ensure_transcript():
     if st.session_state.segments is None:
         with st.spinner("Transcribing audio..."):
@@ -174,3 +177,164 @@ with tab_captions:
                 with open(srt_path, "rb") as f:
                     st.download_button("⬇️ Download .srt file", data=f.read(),
                                         file_name="captions.srt", mime="text/plain")
+                    
+with tab_titles:
+    if not st.session_state.working_video_path:
+        st.info("Upload a video above to get started.")
+    else:
+        if "text_layers" not in st.session_state:
+            st.session_state.text_layers = []
+
+        video_duration = get_video_duration(st.session_state.working_video_path)
+
+        st.markdown('<div class="cutsy-card">', unsafe_allow_html=True)
+        st.markdown('<div class="cutsy-label">Add a text pop-up</div>', unsafe_allow_html=True)
+        st.caption(f"Video is {video_duration:.1f}s long. Add as many timed text layers as you want.")
+
+        with st.form("add_layer_form", clear_on_submit=True):
+            layer_text = st.text_input("Text", placeholder="e.g. MY TRIP TO GOA")
+
+            col1, col2 = st.columns(2)
+            with col1:
+                layer_start = st.number_input("Start (seconds)", min_value=0.0,
+                                               max_value=float(video_duration), value=0.0, step=0.5)
+            with col2:
+                layer_end = st.number_input("End (seconds)", min_value=0.1,
+                                             max_value=float(video_duration), value=min(3.0, video_duration), step=0.5)
+
+            col3, col4, col5 = st.columns(3)
+            with col3:
+                layer_font = st.selectbox("Font", list(FONT_MAP.keys()))
+            with col4:
+                layer_size = st.slider("Font size", 20, 100, 44)
+            with col5:
+                layer_color = st.color_picker("Color", "#FFFFFF")
+
+            col6, col7, col8 = st.columns(3)
+            with col6:
+                layer_position = st.selectbox("Position", ["center", "top", "bottom"])
+            with col7:
+                layer_animation = st.selectbox("Animation", ANIMATIONS)
+            with col8:
+                layer_anim_duration = st.slider("Transition speed (s)", 0.1, 1.5, 0.4, 0.1)
+
+            add_layer = st.form_submit_button("Add this text layer")
+
+            if add_layer and layer_text and layer_end > layer_start:
+                st.session_state.text_layers.append({
+                    "text": layer_text,
+                    "start": layer_start,
+                    "end": layer_end,
+                    "font_choice": layer_font,
+                    "font_size": layer_size,
+                    "color_hex": layer_color,
+                    "position": layer_position,
+                    "animation": layer_animation,
+                    "anim_duration": layer_anim_duration,
+                })
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if st.session_state.text_layers:
+            st.markdown('<div class="cutsy-card">', unsafe_allow_html=True)
+            st.markdown('<div class="cutsy-label">Text layers</div>', unsafe_allow_html=True)
+
+            for i, layer in enumerate(st.session_state.text_layers):
+                col_a, col_b = st.columns([5, 1])
+                with col_a:
+                    st.write(
+                        f"**\"{layer['text']}\"** -- {layer['start']:.1f}s to {layer['end']:.1f}s -- "
+                        f"{layer['font_choice']} -- {layer['animation']} -- {layer['position']}"
+                    )
+                with col_b:
+                    if st.button("Remove", key=f"remove_{i}"):
+                        st.session_state.text_layers.pop(i)
+                        st.rerun()
+
+            col_gen, col_clear = st.columns(2)
+            with col_gen:
+                generate_go = st.button("Render all text layers", key="render_layers")
+            with col_clear:
+                if st.button("Clear all layers"):
+                    st.session_state.text_layers = []
+                    st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            if generate_go:
+                with st.status("Rendering text overlays...", expanded=True) as status:
+                    st.write(f"Compositing {len(st.session_state.text_layers)} text layer(s)...")
+                    output_path = os.path.join(st.session_state.tmpdir, "overlaid.mp4")
+                    apply_text_layers(
+                        st.session_state.working_video_path,
+                        st.session_state.text_layers,
+                        output_path,
+                    )
+                    st.session_state.working_video_path = output_path
+                    st.session_state.segments = None
+                    status.update(label="Done!", state="complete")
+
+                st.success("Text overlays added.")
+                st.video(output_path)
+                with open(output_path, "rb") as f:
+                    st.download_button("Download video with text overlays", data=f.read(),
+                                        file_name="cutsy_overlaid.mp4", mime="video/mp4")
+        else:
+            st.info("No text layers yet -- add one above.")
+with tab_karaoke:
+    if not st.session_state.working_video_path:
+        st.info("Upload a video above to get started.")
+    else:
+        st.markdown('<div class="cutsy-card">', unsafe_allow_html=True)
+        st.markdown('<div class="cutsy-label">Karaoke-style captions</div>', unsafe_allow_html=True)
+        st.caption("Each word highlights the instant it's spoken -- the Reels/TikTok caption style.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            base_color = st.color_picker("Base color (unspoken)", "#FFFFFF", key="karaoke_base")
+        with col2:
+            highlight_color = st.color_picker("Highlight color (spoken)", "#FFD400", key="karaoke_highlight")
+
+        col3, col4, col5 = st.columns(3)
+        with col3:
+            karaoke_font = st.selectbox("Font", KARAOKE_FONTS, key="karaoke_font")
+        with col4:
+            karaoke_size = st.slider("Font size", 24, 80, 48, key="karaoke_size")
+        with col5:
+            karaoke_position = st.selectbox("Position", ["bottom", "center", "top"], key="karaoke_position")
+
+        karaoke_bold = st.checkbox("Bold", value=True, key="karaoke_bold")
+
+        karaoke_go = st.button("Generate karaoke captions", key="karaoke_go")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if karaoke_go:
+            with st.status("Working on it...", expanded=True) as status:
+                st.write("Transcribing with word-level timing...")
+                word_segments = transcribe_video_words(st.session_state.working_video_path)
+
+                st.write("Building karaoke subtitle file...")
+                vid_w, vid_h = get_video_resolution(st.session_state.working_video_path)
+                ass_path = os.path.join(st.session_state.tmpdir, "karaoke.ass")
+                generate_karaoke_ass(
+                    word_segments, ass_path,
+                    video_width=vid_w,
+                    video_height=vid_h,
+                    highlight_color=highlight_color,
+                    base_color=base_color,
+                    font=karaoke_font,
+                    font_size=karaoke_size,
+                    bold=karaoke_bold,
+                    position=karaoke_position,
+                )
+
+                st.write("Burning captions into video...")
+                output_path = os.path.join(st.session_state.tmpdir, "karaoke.mp4")
+                burn_karaoke_captions(st.session_state.working_video_path, ass_path, output_path)
+
+                st.session_state.working_video_path = output_path
+                status.update(label="Done!", state="complete")
+
+            st.success("Karaoke captions added.")
+            st.video(output_path)
+            with open(output_path, "rb") as f:
+                st.download_button("Download video with karaoke captions", data=f.read(),
+                                    file_name="cutsy_karaoke.mp4", mime="video/mp4")            
