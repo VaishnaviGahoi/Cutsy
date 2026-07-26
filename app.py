@@ -258,6 +258,7 @@ st.markdown(f"""
 st.markdown("""
 <div class="cutsy-section" id="features">
     <div class="cutsy-section-title">Upload your video. Describe the edit. Let AI do the rest.</div>
+    <div class="cutsy-section-sub">  </div>
     <div class="cutsy-feature-grid">
         <div class="cutsy-feature-card">
             <div class="cutsy-feature-icon">✂️</div>
