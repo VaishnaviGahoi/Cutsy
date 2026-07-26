@@ -257,7 +257,7 @@ st.markdown(f"""
 # ---------- FEATURES ----------
 st.markdown("""
 <div class="cutsy-section" id="features">
-    <div class="cutsy-section-title">Everything a $130/month editor does</div>
+    <div class="cutsy-section-title">What if editing a video was just... chatting?</div>
     <div class="cutsy-section-sub">Free, and it keeps growing every day.</div>
     <div class="cutsy-feature-grid">
         <div class="cutsy-feature-card">
