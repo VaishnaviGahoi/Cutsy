@@ -224,7 +224,7 @@ hero_logo_html = (
 st.markdown(f"""
 <div class="cutsy-hero-big">
     {hero_logo_html}
-    <div class="cutsy-hero-sub">Edit your video by just describing what you want. Free, open-source, no editing skills required.</div>
+    <div class="cutsy-hero-sub">What if editing a video was just chatting?</div>
     <div class="cutsy-hero-ctas">
         <a href="#editor" class="cutsy-cta-primary">Try it now</a>
         <a href="https://github.com/VaishnaviGahoi/Cutsy" target="_blank" class="cutsy-cta-secondary">View on GitHub</a>
@@ -257,7 +257,7 @@ st.markdown(f"""
 # ---------- FEATURES ----------
 st.markdown("""
 <div class="cutsy-section" id="features">
-    <div class="cutsy-section-title">What if editing a video was just chatting?</div>
+    <div class="cutsy-section-title">Upload your video. Describe the edit. Let AI do the rest.</div>
     <div class="cutsy-section-sub">Free, and it keeps growing every day.</div>
     <div class="cutsy-feature-grid">
         <div class="cutsy-feature-card">
