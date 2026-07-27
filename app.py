@@ -13,6 +13,8 @@ from core.overlays import apply_text_layers, FONT_MAP, ANIMATIONS
 from core.karaoke import generate_karaoke_ass, burn_karaoke_captions, FONT_CHOICES as KARAOKE_FONTS
 from core.beatsync import detect_beats, build_jump_cut_segments, render_jump_cuts
 from core.enhance import apply_speed_ramp, reduce_noise, apply_chroma_key
+from core.colorgrade import apply_color_preset, PRESETS as COLOR_PRESETS
+from core.silence import detect_silence, build_keep_segments
 
 import base64
 
@@ -300,6 +302,15 @@ st.markdown("""
             <div class="cutsy-feature-title">Chroma Key</div>
             <div class="cutsy-feature-desc">Remove a green screen and drop in any color, image, or video as your new background.</div>
         </div>
+        <div class="cutsy-feature-card">
+            <div class="cutsy-feature-icon">🎨</div>
+            <div class="cutsy-feature-title">Color Grade</div>
+            <div class="cutsy-feature-desc">10 cinematic looks -- from moody teal & orange to vintage film -- in one click.</div>
+        </div>
+          <div class="cutsy-feature-card">
+            <div class="cutsy-feature-icon">🤫</div>
+            <div class="cutsy-feature-title">Remove Silence</div>
+            <div class="cutsy-feature-desc">Automatically finds and cuts dead air, so your video stays tight and fast-paced.</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -385,9 +396,9 @@ if st.session_state.working_video_path:
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- TABS ----------
-tab_trim, tab_captions, tab_titles, tab_karaoke, tab_beatsync, tab_speed, tab_noise, tab_chroma = st.tabs(
+tab_trim, tab_captions, tab_titles, tab_karaoke, tab_beatsync, tab_speed, tab_noise, tab_chroma, tab_color, tab_silence = st.tabs(
     ["✂️ Trim", "💬 Captions", "🎬 Text Overlays", "🎤 Karaoke Captions", "🥁 Beat Sync",
-     "⏩ Speed Ramp", "🔇 Noise Reduction", "🟢 Chroma Key"]
+     "⏩ Speed Ramp", "🔇 Noise Reduction", "🟢 Chroma Key", "🎨 Color Grade", "🤫 Remove Silence"]
 )
 
 
@@ -820,3 +831,76 @@ with tab_chroma:
             with open(output_path, "rb") as f:
                 st.download_button("Download chroma-keyed video", data=f.read(),
                                     file_name="cutsy_chroma.mp4", mime="video/mp4")
+with tab_color:
+    if not st.session_state.working_video_path:
+        st.info("Upload a video above to get started.")
+    else:
+        st.markdown('<div class="cutsy-card">', unsafe_allow_html=True)
+        st.markdown('<div class="cutsy-label">Color grading</div>', unsafe_allow_html=True)
+        st.caption("One-click cinematic looks -- no LUT files needed.")
+
+        preset_choice = st.selectbox("Choose a look", list(COLOR_PRESETS.keys()), key="color_preset_choice")
+        color_go = st.button("Apply color grade", key="color_go")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if color_go:
+            with st.status("Working on it...", expanded=True) as status:
+                st.write(f"Applying {preset_choice} grade...")
+                output_path = os.path.join(st.session_state.tmpdir, "graded.mp4")
+                apply_color_preset(st.session_state.working_video_path, output_path, preset_choice)
+                st.session_state.working_video_path = output_path
+                st.session_state.segments = None
+                status.update(label="Done!", state="complete")
+
+            st.success(f"{preset_choice} grade applied.")
+            st.video(output_path)
+            with open(output_path, "rb") as f:
+                st.download_button("Download graded video", data=f.read(),
+                                    file_name="cutsy_graded.mp4", mime="video/mp4")            
+with tab_silence:
+    if not st.session_state.working_video_path:
+        st.info("Upload a video above to get started.")
+    else:
+        st.markdown('<div class="cutsy-card">', unsafe_allow_html=True)
+        st.markdown('<div class="cutsy-label">Remove silence</div>', unsafe_allow_html=True)
+        st.caption("Automatically cuts dead air and long pauses from your video.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            silence_thresh = st.slider("Silence sensitivity (dB)", -60, -20, -35, key="silence_thresh")
+        with col2:
+            min_silence = st.slider("Minimum pause length (seconds)", 0.2, 2.0, 0.5, 0.1, key="min_silence")
+
+        silence_go = st.button("Remove silence", key="silence_go")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if silence_go:
+            with st.status("Working on it...", expanded=True) as status:
+                st.write("Scanning audio for silence...")
+                silence_intervals = detect_silence(
+                    st.session_state.working_video_path,
+                    silence_thresh_db=silence_thresh,
+                    min_silence_duration=min_silence,
+                )
+
+                if not silence_intervals:
+                    st.warning("No silence detected above these settings -- try raising sensitivity.")
+                else:
+                    st.write(f"Found {len(silence_intervals)} silent stretch(es). Building cut list...")
+                    duration = get_video_duration(st.session_state.working_video_path)
+                    segments = build_keep_segments(duration, silence_intervals)
+
+                    st.write(f"Cutting and stitching {len(segments)} kept segment(s)...")
+                    output_path = os.path.join(st.session_state.tmpdir, "nosilence.mp4")
+                    render_jump_cuts(st.session_state.working_video_path, segments, output_path)
+
+                    st.session_state.working_video_path = output_path
+                    st.session_state.segments = None
+                    status.update(label="Done!", state="complete")
+
+            if silence_intervals:
+                st.success("Silence removed.")
+                st.video(output_path)
+                with open(output_path, "rb") as f:
+                    st.download_button("Download trimmed video", data=f.read(),
+                                        file_name="cutsy_nosilence.mp4", mime="video/mp4")
