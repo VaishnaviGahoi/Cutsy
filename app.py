@@ -17,6 +17,8 @@ from core.colorgrade import apply_color_preset, PRESETS as COLOR_PRESETS
 from core.silence import detect_silence, build_keep_segments
 from core.pip import apply_pip
 from core.kenburns import apply_ken_burns
+from core.music import add_background_music
+from core.watermark import add_watermark
 
 import base64
 
@@ -329,6 +331,16 @@ st.markdown("""
             <div class="cutsy-feature-title">Auto Zoom</div>
             <div class="cutsy-feature-desc">A slow cinematic Ken Burns zoom, in or out, over any clip -- one click.</div>
         </div>
+        <div class="cutsy-feature-card">
+            <div class="cutsy-feature-icon">🎵</div>
+            <div class="cutsy-feature-title">Background Music</div>
+            <div class="cutsy-feature-desc">Mix in any music track, with independent volume control -- loops automatically to fit.</div>
+        </div>
+        <div class="cutsy-feature-card">
+            <div class="cutsy-feature-icon">💧</div>
+            <div class="cutsy-feature-title">Watermark</div>
+            <div class="cutsy-feature-desc">Brand your exports with your own logo, sized and positioned however you like.</div>
+        </div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -414,10 +426,10 @@ if st.session_state.working_video_path:
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- TABS ----------
-tab_trim, tab_captions, tab_titles, tab_karaoke, tab_beatsync, tab_speed, tab_noise, tab_chroma, tab_color, tab_silence, tab_style, tab_pip, tab_kenburns = st.tabs(
+tab_trim, tab_captions, tab_titles, tab_karaoke, tab_beatsync, tab_speed, tab_noise, tab_chroma, tab_color, tab_silence, tab_style, tab_pip, tab_kenburns, tab_music, tab_watermark = st.tabs(
     ["✂️ Trim", "💬 Captions", "🎬 Text Overlays", "🎤 Karaoke Captions", "🥁 Beat Sync",
      "⏩ Speed Ramp", "🔇 Noise Reduction", "🟢 Chroma Key", "🎨 Color Grade", "🤫 Remove Silence", "🎯 Style Match",
-     "🖼️ Picture-in-Picture", "🔍 Auto Zoom"]
+     "🖼️ Picture-in-Picture", "🔍 Auto Zoom", "🎵 Background Music", "💧 Watermark"]
 )
 
 
@@ -1014,3 +1026,91 @@ with tab_kenburns:
             with open(output_path, "rb") as f:
                 st.download_button("Download zoomed video", data=f.read(),
                                     file_name="cutsy_kenburns.mp4", mime="video/mp4")            
+                
+with tab_music:
+    if not st.session_state.working_video_path:
+        st.info("Upload a video above to get started.")
+    else:
+        st.markdown('<div class="cutsy-card">', unsafe_allow_html=True)
+        st.markdown('<div class="cutsy-label">Background music</div>', unsafe_allow_html=True)
+        st.caption("Mix a music track under your video's existing audio. Music loops automatically if it's shorter than your video.")
+
+        music_file = st.file_uploader("Music track", type=["mp3", "wav", "m4a", "aac"], key="music_file")
+
+        music_path = None
+        if music_file is not None:
+            music_path = os.path.join(st.session_state.tmpdir, "music_" + music_file.name)
+            with open(music_path, "wb") as f:
+                f.write(music_file.getbuffer())
+
+        col1, col2 = st.columns(2)
+        with col1:
+            music_volume = st.slider("Music volume", 0.0, 1.0, 0.4, 0.05, key="music_volume")
+        with col2:
+            original_volume = st.slider("Original audio volume", 0.0, 1.0, 1.0, 0.05, key="original_volume")
+
+        music_go = st.button("Add background music", disabled=(music_path is None), key="music_go")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if music_go and music_path:
+            with st.status("Working on it...", expanded=True) as status:
+                st.write("Mixing music into your video...")
+                output_path = os.path.join(st.session_state.tmpdir, "with_music.mp4")
+                add_background_music(
+                    st.session_state.working_video_path, music_path, output_path,
+                    music_volume=music_volume, original_volume=original_volume,
+                )
+                st.session_state.working_video_path = output_path
+                st.session_state.segments = None
+                status.update(label="Done!", state="complete")
+
+            st.success("Background music added.")
+            st.video(output_path)
+            with open(output_path, "rb") as f:
+                st.download_button("Download video with music", data=f.read(),
+                                    file_name="cutsy_music.mp4", mime="video/mp4")
+
+with tab_watermark:
+    if not st.session_state.working_video_path:
+        st.info("Upload a video above to get started.")
+    else:
+        st.markdown('<div class="cutsy-card">', unsafe_allow_html=True)
+        st.markdown('<div class="cutsy-label">Watermark / logo</div>', unsafe_allow_html=True)
+        st.caption("Add your logo or a watermark to a corner of your video -- great for branding exports.")
+
+        watermark_file = st.file_uploader("Logo image", type=["png", "jpg", "jpeg"], key="watermark_file")
+
+        watermark_path = None
+        if watermark_file is not None:
+            watermark_path = os.path.join(st.session_state.tmpdir, "wm_" + watermark_file.name)
+            with open(watermark_path, "wb") as f:
+                f.write(watermark_file.getbuffer())
+
+        col1, col2 = st.columns(2)
+        with col1:
+            wm_position = st.selectbox("Position", ["bottom-right", "bottom-left", "top-right", "top-left"], key="wm_position")
+        with col2:
+            wm_scale = st.slider("Size (% of video width)", 5, 40, 15, key="wm_scale") / 100
+
+        wm_opacity = st.slider("Opacity", 0.1, 1.0, 0.8, 0.05, key="wm_opacity")
+
+        wm_go = st.button("Add watermark", disabled=(watermark_path is None), key="wm_go")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if wm_go and watermark_path:
+            with st.status("Working on it...", expanded=True) as status:
+                st.write("Adding watermark...")
+                output_path = os.path.join(st.session_state.tmpdir, "watermarked.mp4")
+                add_watermark(
+                    st.session_state.working_video_path, watermark_path, output_path,
+                    position=wm_position, scale=wm_scale, opacity=wm_opacity,
+                )
+                st.session_state.working_video_path = output_path
+                st.session_state.segments = None
+                status.update(label="Done!", state="complete")
+
+            st.success("Watermark added.")
+            st.video(output_path)
+            with open(output_path, "rb") as f:
+                st.download_button("Download watermarked video", data=f.read(),
+                                    file_name="cutsy_watermarked.mp4", mime="video/mp4")       
