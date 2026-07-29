@@ -15,6 +15,8 @@ from core.beatsync import detect_beats, build_jump_cut_segments, render_jump_cut
 from core.enhance import apply_speed_ramp, reduce_noise, apply_chroma_key
 from core.colorgrade import apply_color_preset, PRESETS as COLOR_PRESETS
 from core.silence import detect_silence, build_keep_segments
+from core.pip import apply_pip
+from core.kenburns import apply_ken_burns
 
 import base64
 
@@ -312,6 +314,22 @@ st.markdown("""
             <div class="cutsy-feature-title">Remove Silence</div>
             <div class="cutsy-feature-desc">Automatically finds and cuts dead air, so your video stays tight and fast-paced.</div>
     </div>
+    <div class="cutsy-feature-card">
+            <div class="cutsy-feature-icon">🎯</div>
+            <div class="cutsy-feature-title">Style Match</div>
+            <div class="cutsy-feature-desc">Feed it any reference video -- Cutsy matches the color tone and editing pace to your footage.</div>
+        </div>
+        <div class="cutsy-feature-card">
+            <div class="cutsy-feature-icon">🖼️</div>
+            <div class="cutsy-feature-title">Picture-in-Picture</div>
+            <div class="cutsy-feature-desc">Overlay a webcam, reaction, or demo clip in any corner of your main video.</div>
+        </div>
+        <div class="cutsy-feature-card">
+            <div class="cutsy-feature-icon">🔍</div>
+            <div class="cutsy-feature-title">Auto Zoom</div>
+            <div class="cutsy-feature-desc">A slow cinematic Ken Burns zoom, in or out, over any clip -- one click.</div>
+        </div>
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -396,9 +414,10 @@ if st.session_state.working_video_path:
 st.markdown('</div>', unsafe_allow_html=True)
 
 # ---------- TABS ----------
-tab_trim, tab_captions, tab_titles, tab_karaoke, tab_beatsync, tab_speed, tab_noise, tab_chroma, tab_color, tab_silence = st.tabs(
+tab_trim, tab_captions, tab_titles, tab_karaoke, tab_beatsync, tab_speed, tab_noise, tab_chroma, tab_color, tab_silence, tab_style, tab_pip, tab_kenburns = st.tabs(
     ["✂️ Trim", "💬 Captions", "🎬 Text Overlays", "🎤 Karaoke Captions", "🥁 Beat Sync",
-     "⏩ Speed Ramp", "🔇 Noise Reduction", "🟢 Chroma Key", "🎨 Color Grade", "🤫 Remove Silence"]
+     "⏩ Speed Ramp", "🔇 Noise Reduction", "🟢 Chroma Key", "🎨 Color Grade", "🤫 Remove Silence", "🎯 Style Match",
+     "🖼️ Picture-in-Picture", "🔍 Auto Zoom"]
 )
 
 
@@ -904,3 +923,94 @@ with tab_silence:
                 with open(output_path, "rb") as f:
                     st.download_button("Download trimmed video", data=f.read(),
                                         file_name="cutsy_nosilence.mp4", mime="video/mp4")
+                    
+with tab_pip:
+    if not st.session_state.working_video_path:
+        st.info("Upload a video above to get started.")
+    else:
+        st.markdown('<div class="cutsy-card">', unsafe_allow_html=True)
+        st.markdown('<div class="cutsy-label">Picture-in-picture</div>', unsafe_allow_html=True)
+        st.caption("Overlay a second clip (webcam, reaction, demo) in a corner of your video.")
+
+        pip_file = st.file_uploader("Overlay video", type=["mp4", "mov", "mkv", "avi", "webm"], key="pip_overlay")
+
+        pip_path = None
+        if pip_file is not None:
+            pip_path = os.path.join(st.session_state.tmpdir, "pip_" + pip_file.name)
+            with open(pip_path, "wb") as f:
+                f.write(pip_file.getbuffer())
+
+        col1, col2 = st.columns(2)
+        with col1:
+            pip_position = st.selectbox("Position", ["bottom-right", "bottom-left", "top-right", "top-left"], key="pip_position")
+        with col2:
+            pip_scale = st.slider("Overlay size (% of main video width)", 10, 60, 30, key="pip_scale") / 100
+
+        col3, col4 = st.columns(2)
+        with col3:
+            pip_shape = st.selectbox("Shape", ["rectangle", "square", "circle"], key="pip_shape")
+        with col4:
+            pip_audio = st.selectbox("Keep audio from", ["main", "overlay"], key="pip_audio",
+                                      format_func=lambda x: "Main video" if x == "main" else "Overlay clip")
+
+        pip_go = st.button("Apply picture-in-picture", disabled=(pip_path is None), key="pip_go")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if pip_go and pip_path:
+            with st.status("Working on it...", expanded=True) as status:
+                st.write("Compositing overlay onto main video...")
+                output_path = os.path.join(st.session_state.tmpdir, "pip_result.mp4")
+                apply_pip(
+                    st.session_state.working_video_path, pip_path, output_path,
+                    position=pip_position, scale=pip_scale, shape=pip_shape, audio_source=pip_audio,
+                )
+                st.session_state.working_video_path = output_path
+                st.session_state.segments = None
+                status.update(label="Done!", state="complete")
+
+            st.success("Picture-in-picture applied.")
+            st.video(output_path)
+            with open(output_path, "rb") as f:
+                st.download_button("Download video with overlay", data=f.read(),
+                                    file_name="cutsy_pip.mp4", mime="video/mp4")
+
+with tab_kenburns:
+    if not st.session_state.working_video_path:
+        st.info("Upload a video above to get started.")
+    else:
+        st.markdown('<div class="cutsy-card">', unsafe_allow_html=True)
+        st.markdown('<div class="cutsy-label">Auto zoom (Ken Burns effect)</div>', unsafe_allow_html=True)
+        st.caption("A slow cinematic zoom over your clip -- great for static or talking-head shots.")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            kb_direction = st.selectbox("Direction", ["in", "out"], key="kb_direction",
+                                         format_func=lambda x: "Zoom in" if x == "in" else "Zoom out")
+        with col2:
+            kb_amount = st.slider("Zoom amount (%)", 5, 40, 15, key="kb_amount") / 100
+
+        kb_go = st.button("Apply auto zoom", key="kb_go")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        if kb_go:
+            with st.status("Working on it...", expanded=True) as status:
+                st.write("Reading video info...")
+                vid_w, vid_h = get_video_resolution(st.session_state.working_video_path)
+                vid_duration = get_video_duration(st.session_state.working_video_path)
+
+                st.write(f"Rendering {kb_direction} zoom...")
+                output_path = os.path.join(st.session_state.tmpdir, "kenburns.mp4")
+                apply_ken_burns(
+                    st.session_state.working_video_path, output_path,
+                    video_width=vid_w, video_height=vid_h, video_duration=vid_duration,
+                    direction=kb_direction, zoom_amount=kb_amount,
+                )
+                st.session_state.working_video_path = output_path
+                st.session_state.segments = None
+                status.update(label="Done!", state="complete")
+
+            st.success("Auto zoom applied.")
+            st.video(output_path)
+            with open(output_path, "rb") as f:
+                st.download_button("Download zoomed video", data=f.read(),
+                                    file_name="cutsy_kenburns.mp4", mime="video/mp4")            
